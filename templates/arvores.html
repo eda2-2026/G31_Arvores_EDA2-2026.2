@@ -1,0 +1,214 @@
+{% extends "base.html" %}
+{% block titulo %}Árvores · SIGAA Pokémon{% endblock %}
+{% block conteudo %}
+<h1 class="text-2xl font-extrabold tracking-tight text-sigaa-900">BST × AVL × Rubro-negra</h1>
+<p class="mt-1 max-w-3xl text-sm text-slate-500">
+  Insere matrículas reais da base em cada árvore, busca 1.000 delas e remove 10%.
+  As matrículas de um semestre novo chegam <b>em ordem crescente</b> (261000001, 261000002…): é o pior caso da BST comum,
+  que vira uma lista. Por isso, nesse caso, ela para em {{ '{:,}'.format(limite_bst).replace(',', '.') }} matrículas.
+</p>
+
+<form id="form" class="cartao mt-6 grid gap-4 p-5 sm:grid-cols-3 sm:items-end">
+  <label class="block"><span class="rotulo">Matrículas (n)</span>
+    <select id="n" class="campo mt-1">
+      <option value="1000">1.000</option>
+      <option value="10000">10.000</option>
+      <option value="50000">50.000</option>
+      <option value="100000" selected>100.000</option>
+    </select>
+  </label>
+  <label class="block"><span class="rotulo">Ordem de chegada</span>
+    <select id="ordem" class="campo mt-1">
+      <option value="crescente">Crescente (semestre novo)</option>
+      <option value="aleatoria">Aleatória</option>
+    </select>
+  </label>
+  <button class="botao">▶ Rodar as três árvores</button>
+</form>
+
+<div id="cartoes" class="mt-6 grid gap-6 lg:grid-cols-3"></div>
+
+<section class="cartao mt-6 p-5">
+  <div class="flex flex-wrap items-baseline justify-between gap-2">
+    <h2 class="font-bold text-sigaa-900">Altura da árvore conforme as matrículas entram</h2>
+    <span class="text-xs text-slate-400">eixo vertical em escala log₂</span>
+  </div>
+  <div id="legenda" class="mt-2 flex flex-wrap gap-4 text-xs text-slate-600"></div>
+  <div id="grafico" class="relative mt-3"></div>
+</section>
+
+<section class="cartao mt-6 overflow-hidden">
+  <div class="px-5 py-4"><h2 class="font-bold text-sigaa-900">Tabela</h2></div>
+  <div class="overflow-x-auto">
+    <table class="w-full text-sm">
+      <thead class="bg-slate-50 text-left"><tr>
+        <th class="rotulo px-5 py-2.5">Árvore</th>
+        <th class="rotulo px-5 py-2.5 text-right">n</th>
+        <th class="rotulo px-5 py-2.5 text-right">Altura</th>
+        <th class="rotulo px-5 py-2.5 text-right">Comp. por busca</th>
+        <th class="rotulo px-5 py-2.5 text-right">Inserção</th>
+        <th class="rotulo px-5 py-2.5 text-right">Comp. inserção</th>
+        <th class="rotulo px-5 py-2.5 text-right">Rotações</th>
+        <th class="rotulo px-5 py-2.5 text-right">Recolorações</th>
+        <th class="rotulo px-5 py-2.5 text-right">Remoção 10%</th>
+      </tr></thead>
+      <tbody id="tabela"><tr><td colspan="9" class="px-5 py-6 text-center text-slate-400">Rodando…</td></tr></tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// cor segue a árvore, nunca a posição (ordem fixa da paleta categórica)
+const COR = { bst: '#2a78d6', avl: '#eb6834', rubro_negra: '#1baf7a' };
+const ms = v => `${Number(v).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} ms`;
+const dec = v => Number(v).toLocaleString('pt-BR', { maximumFractionDigits: 1 });
+
+function limite(a, n) {
+  if (a.arvore === 'rubro_negra') return `máximo teórico 2·log₂(n+1) = ${dec(2 * Math.log2(n + 1))}`;
+  if (a.arvore === 'avl') return `máximo teórico 1,44·log₂(n+2) = ${dec(1.4405 * Math.log2(n + 2) - 0.3277)}`;
+  return `pior caso: n = ${num(n)}`;
+}
+
+function cartao(a) {
+  const cabeca = `<div class="flex items-center gap-2"><span class="h-3 w-3 rounded-full" style="background:${COR[a.arvore]}"></span><h2 class="font-bold text-sigaa-900">${a.nome}</h2></div>`;
+  if (a.pendente) {
+    return `<section class="cartao p-5 opacity-70">${cabeca}
+      <div class="mt-4 rounded-xl bg-slate-50 p-4 text-sm text-slate-500">Aguardando implementação em <code class="font-mono text-xs">arvores/${a.arvore}.py</code>. Quando estiver pronta, entra aqui sozinha.</div></section>`;
+  }
+  const linha = (rotulo, valor) => `<div class="flex justify-between border-t border-slate-100 py-1.5"><span class="text-slate-500">${rotulo}</span><span class="font-mono font-medium text-slate-800">${valor}</span></div>`;
+  return `<section class="cartao fade-in p-5">${cabeca}
+    <div class="mt-3 flex items-end justify-between">
+      <div><div class="rotulo">Altura</div><div class="text-4xl font-extrabold text-sigaa-900">${num(a.altura)}</div></div>
+      <div class="text-right"><div class="rotulo">Comparações por busca</div><div class="text-2xl font-extrabold text-sigaa-900">${dec(a.busca.media_comparacoes)}</div></div>
+    </div>
+    <div class="mt-1 text-xs text-slate-400">${limite(a, a.n)}</div>
+    ${a.limitada ? `<div class="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800 ring-1 ring-amber-200">Virou uma lista: parou em ${num(a.n)} matrículas (cada inserção percorre todas as anteriores).</div>` : ''}
+    <div class="mt-3 text-sm">
+      ${linha('Inserção de ' + num(a.n), ms(a.insercao.tempo_ms))}
+      ${linha('Comparações na inserção', num(a.insercao.comparacoes))}
+      ${linha('Rotações', num(a.insercao.rotacoes))}
+      ${linha('Recolorações', num(a.insercao.recoloracoes))}
+      ${linha('Remoção de 10%', ms(a.remocao.tempo_ms) + ' · ' + num(a.remocao.rotacoes) + ' rot.')}
+    </div></section>`;
+}
+
+function tabela(r) {
+  return r.arvores.map(a => a.pendente
+    ? `<tr class="border-t border-slate-100"><td class="px-5 py-2.5 font-semibold">${a.nome}</td><td colspan="8" class="px-5 py-2.5 text-slate-400">aguardando implementação</td></tr>`
+    : `<tr class="border-t border-slate-100">
+        <td class="px-5 py-2.5 font-semibold"><span class="mr-2 inline-block h-2.5 w-2.5 rounded-full" style="background:${COR[a.arvore]}"></span>${a.nome}</td>
+        <td class="px-5 py-2.5 text-right font-mono">${num(a.n)}</td>
+        <td class="px-5 py-2.5 text-right font-mono">${num(a.altura)}</td>
+        <td class="px-5 py-2.5 text-right font-mono">${dec(a.busca.media_comparacoes)}</td>
+        <td class="px-5 py-2.5 text-right font-mono">${ms(a.insercao.tempo_ms)}</td>
+        <td class="px-5 py-2.5 text-right font-mono">${num(a.insercao.comparacoes)}</td>
+        <td class="px-5 py-2.5 text-right font-mono">${num(a.insercao.rotacoes)}</td>
+        <td class="px-5 py-2.5 text-right font-mono">${num(a.insercao.recoloracoes)}</td>
+        <td class="px-5 py-2.5 text-right font-mono">${ms(a.remocao.tempo_ms)}</td>
+      </tr>`).join('');
+}
+
+// ---------- gráfico (SVG feito à mão) ----------
+
+function grafico(r) {
+  const W = 880, H = 340, M = { e: 48, d: 170, c: 14, b: 34 };
+  const series = r.arvores.filter(a => !a.pendente);
+  const maxAlt = Math.max(32, ...series.map(a => a.altura));
+  const topo = Math.ceil(Math.log2(maxAlt));
+  const x = v => M.e + (v / r.n) * (W - M.e - M.d);
+  const y = v => H - M.b - (Math.log2(Math.max(v, 1)) / topo) * (H - M.b - M.c);
+
+  const passoY = topo > 8 ? 2 : 1;
+  let grade = '';
+  for (let k = 0; k <= topo; k += passoY) {
+    const v = 2 ** k;
+    grade += `<line x1="${M.e}" x2="${W - M.d}" y1="${y(v)}" y2="${y(v)}" stroke="#e2e8f0"/>
+      <text x="${M.e - 8}" y="${y(v) + 4}" text-anchor="end" font-size="11" fill="#64748b">${num(v)}</text>`;
+  }
+  for (let k = 0; k <= 4; k++) {
+    const v = Math.round(r.n * k / 4);
+    grade += `<text x="${x(v)}" y="${H - M.b + 18}" text-anchor="middle" font-size="11" fill="#64748b">${num(v)}</text>`;
+  }
+
+  // referência: árvore perfeitamente balanceada, altura = log₂(n+1)
+  const ideal = Array.from({ length: 60 }, (_, i) => {
+    const v = Math.max(1, Math.round(r.n * (i + 1) / 60));
+    return `${x(v)},${y(Math.log2(v + 1))}`;
+  }).join(' ');
+
+  const linhas = series.map(a => {
+    const pts = a.curva.map(([i, h]) => `${x(i)},${y(h)}`).join(' ');
+    return `<polyline points="${pts}" fill="none" stroke="${COR[a.arvore]}" stroke-width="2" stroke-linejoin="round"/>`;
+  }).join('');
+
+  // rótulos diretos no fim de cada linha, afastados se ficarem colados
+  const rot = series.map(a => {
+    const [i, h] = a.curva[a.curva.length - 1];
+    return { a, cx: x(i), cy: y(h), ty: y(h) };
+  }).sort((p, q) => p.ty - q.ty);
+  for (let k = 1; k < rot.length; k++) rot[k].ty = Math.max(rot[k].ty, rot[k - 1].ty + 15);
+  const rotulos = rot.map(p => `
+    <circle cx="${p.cx}" cy="${p.cy}" r="4" fill="${COR[p.a.arvore]}" stroke="white" stroke-width="2"/>
+    <text x="${p.cx + 8}" y="${p.ty + 4}" font-size="12" fill="#1e293b" font-weight="600">${p.a.nome} · ${num(p.a.altura)}</text>`).join('');
+
+  const el = document.getElementById('grafico');
+  el.innerHTML = `
+    <svg viewBox="0 0 ${W} ${H}" class="w-full" role="img" aria-label="Altura de cada árvore conforme as matrículas são inseridas">
+      ${grade}
+      <text x="${(M.e + W - M.d) / 2}" y="${H - 2}" text-anchor="middle" font-size="11" fill="#64748b">matrículas inseridas</text>
+      <polyline points="${ideal}" fill="none" stroke="#94a3b8" stroke-width="1.5" stroke-dasharray="4 4"/>
+      ${linhas}${rotulos}
+      <line id="cursor" y1="${M.c}" y2="${H - M.b}" stroke="#94a3b8" stroke-width="1" visibility="hidden"/>
+      <rect id="alvo" x="${M.e}" y="0" width="${W - M.e - M.d}" height="${H}" fill="transparent"/>
+    </svg>
+    <div id="dica" class="pointer-events-none absolute hidden rounded-lg bg-slate-900 px-3 py-2 text-xs text-white shadow-lg"></div>`;
+
+  document.getElementById('legenda').innerHTML = series.map(a =>
+    `<span class="flex items-center gap-1.5"><span class="h-0.5 w-5" style="background:${COR[a.arvore]}"></span>${a.nome}</span>`).join('')
+    + '<span class="flex items-center gap-1.5"><span class="w-5 border-t-2 border-dashed border-slate-400"></span>Perfeitamente balanceada (log₂ n)</span>';
+
+  // hover: altura de cada árvore no ponto mais perto do cursor
+  const svg = el.querySelector('svg'), cursor = svg.querySelector('#cursor'), dica = el.querySelector('#dica');
+  svg.querySelector('#alvo').addEventListener('mousemove', ev => {
+    const caixa = svg.getBoundingClientRect();
+    const px = (ev.clientX - caixa.left) * W / caixa.width;
+    const alvo = Math.max(1, (px - M.e) / (W - M.e - M.d) * r.n);
+    const linhasDica = series.map(a => {
+      const fim = a.curva[a.curva.length - 1][0];
+      if (alvo > fim * 1.05) return `<div class="flex items-center gap-1.5"><span class="h-2 w-2 rounded-full" style="background:${COR[a.arvore]}"></span>${a.nome}: <span class="text-slate-400">parou em ${num(fim)}</span></div>`;
+      const p = a.curva.reduce((m, c) => Math.abs(c[0] - alvo) < Math.abs(m[0] - alvo) ? c : m);
+      return `<div class="flex items-center gap-1.5"><span class="h-2 w-2 rounded-full" style="background:${COR[a.arvore]}"></span>${a.nome}: altura <b>${num(p[1])}</b> <span class="text-slate-400">(n = ${num(p[0])})</span></div>`;
+    }).join('');
+    cursor.setAttribute('x1', px); cursor.setAttribute('x2', px);
+    cursor.setAttribute('visibility', 'visible');
+    dica.innerHTML = `<div class="mb-1 text-slate-300">≈ ${num(Math.round(alvo))} inseridas · ideal ${dec(Math.log2(alvo + 1))}</div>${linhasDica}`;
+    dica.classList.remove('hidden');
+    const esq = (ev.clientX - el.getBoundingClientRect().left);
+    dica.style.left = `${Math.min(esq + 14, el.clientWidth - dica.offsetWidth)}px`;
+    dica.style.top = '8px';
+  });
+  svg.querySelector('#alvo').addEventListener('mouseleave', () => {
+    cursor.setAttribute('visibility', 'hidden');
+    dica.classList.add('hidden');
+  });
+}
+
+async function rodar(botao) {
+  const n = document.getElementById('n').value, ordem = document.getElementById('ordem').value;
+  const tarefa = async () => {
+    try {
+      const r = await api(`/api/arvores/benchmark?n=${n}&ordem=${ordem}`);
+      document.getElementById('cartoes').innerHTML = r.arvores.map(cartao).join('');
+      document.getElementById('tabela').innerHTML = tabela(r);
+      grafico(r);
+    } catch (err) { toast(err.message, 'erro'); }
+  };
+  return botao ? comCarregando(botao, tarefa) : tarefa();
+}
+
+document.getElementById('form').onsubmit = e => { e.preventDefault(); rodar(e.target.querySelector('button')); };
+rodar();
+</script>
+{% endblock %}

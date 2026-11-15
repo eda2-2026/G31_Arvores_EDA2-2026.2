@@ -11,6 +11,7 @@ from datetime import datetime, timedelta
 
 from flask import Flask, abort, jsonify, render_template, request
 
+import benchmark_arvores
 import dados
 from busca import Base
 from dados import cpf_valido, eh_formando, semestre_cursando, so_digitos
@@ -179,6 +180,12 @@ def pagina_ranking():
 def pagina_benchmark():
     return render_template("benchmark.html", ativo="benchmark", algoritmos=ALGORITMOS,
                            limite_quadratico=LIMITE_QUADRATICO)
+
+
+@app.route("/arvores")
+def pagina_arvores():
+    return render_template("arvores.html", ativo="arvores",
+                           limite_bst=benchmark_arvores.LIMITE_BST_DEGENERADA)
 
 
 @app.route("/corrida")
@@ -448,6 +455,19 @@ def api_corrida():
         } for a in largada],
         "pistas": pistas,
     })
+
+
+@app.get("/api/arvores/benchmark")
+def api_benchmark_arvores():
+    n = max(100, min(int(request.args.get("n", 10000)), len(Estado.base.alunos())))
+    ordem = request.args.get("ordem", "crescente")
+    if ordem not in ("crescente", "aleatoria"):
+        return jsonify({"erro": "Ordem inválida."}), 400
+    matriculas = [int(a["matricula"]) for a in Estado.base.alunos()]
+    inicio = time.perf_counter()
+    r = benchmark_arvores.rodar(matriculas, n, ordem)
+    r["tempo_total_ms"] = round((time.perf_counter() - inicio) * 1000)
+    return jsonify(r)
 
 
 carregar()
