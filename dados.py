@@ -15,10 +15,12 @@ PASTA = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
 ARQ_ALUNOS = os.path.join(PASTA, "alunos.csv")
 ARQ_TURMAS = os.path.join(PASTA, "turmas.csv")
 ARQ_PEDIDOS = os.path.join(PASTA, "pedidos.csv")
+ARQ_EVENTOS = os.path.join(PASTA, "eventos.csv")  # o que aconteceu depois do processamento
 
 CAMPOS_ALUNO = ["matricula", "nome", "cpf", "idade", "curso", "telefone", "ira", "pokemon_id", "shiny"]
 CAMPOS_TURMA = ["codigo", "disciplina", "professor", "horario", "vagas"]
 CAMPOS_PEDIDO = ["id", "matricula", "turma", "timestamp"]
+CAMPOS_EVENTO = ["id", "tipo", "turma", "matricula", "timestamp"]  # tipo: pedido/trancar/desistir
 
 # período letivo atual - é a partir dele que se calcula em que semestre o aluno está
 ANO_ATUAL, SEMESTRE_ATUAL = 2026, 2
@@ -282,3 +284,16 @@ def carregar_pedidos():
     for p in pedidos:
         p["id"] = int(p["id"])
     return pedidos
+
+
+def salvar_eventos(eventos):
+    _salvar(ARQ_EVENTOS, CAMPOS_EVENTO, eventos)
+
+
+def carregar_eventos():
+    if not os.path.exists(ARQ_EVENTOS):
+        return []
+    eventos = _carregar(ARQ_EVENTOS)
+    for e in eventos:
+        e["id"] = int(e["id"])
+    return eventos
