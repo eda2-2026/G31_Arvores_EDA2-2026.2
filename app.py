@@ -14,6 +14,7 @@ from flask import Flask, abort, jsonify, render_template, request
 import dados
 from busca import Base
 from dados import cpf_valido, eh_formando, semestre_cursando, so_digitos
+from fila import ErroFila, FilaTurma
 from matricula import CRITERIOS, montar_candidatos, processar_turma
 from ordenacao import ALGORITMOS, Metricas, merge_sort, ordenar
 
@@ -30,6 +31,8 @@ class Estado:
     base = None
     turmas = []
     pedidos = []
+    eventos = []   # pedidos, trancamentos e desistências depois do processamento
+    filas = {}     # código da turma -> FilaTurma
     carregado_em = 0.0
 
 
@@ -54,16 +57,69 @@ def carregar():
 
     if os.path.exists(dados.ARQ_PEDIDOS) and not novos_fixos:
         pedidos = dados.carregar_pedidos()
+        eventos = dados.carregar_eventos()
     else:
         pedidos = dados.gerar_pedidos(alunos, turmas)
         dados.salvar_pedidos(pedidos)
+        eventos = []
+        dados.salvar_eventos(eventos)
 
     Estado.base = Base(alunos)
     Estado.turmas = turmas
     Estado.pedidos = pedidos
+    Estado.eventos = eventos
+    montar_filas()
     Estado.carregado_em = time.perf_counter() - inicio
     print(f"Base pronta: {len(alunos)} alunos, {len(turmas)} turmas, "
           f"{len(pedidos)} pedidos ({Estado.carregado_em:.1f}s)")
+
+
+def montar_filas():
+    """Fase 1 em todas as turmas (processa o período de matrícula) e depois
+    refaz, em ordem, tudo o que aconteceu desde então."""
+    por_turma = {t["codigo"]: [] for t in Estado.turmas}
+    for p in Estado.pedidos:
+        por_turma[p["turma"]].append(p)
+    Estado.filas = {t["codigo"]: FilaTurma(t, montar_candidatos(por_turma[t["codigo"]], Estado.base))
+                    for t in Estado.turmas}
+    for evento in Estado.eventos:
+        try:
+            aplicar_evento(evento)
+        except (ErroFila, KeyError):
+            pass  # evento que não faz mais sentido (ex.: aluno removido da base)
+    for fila in Estado.filas.values():
+        fila.historico.clear()
+
+
+def aplicar_evento(evento):
+    fila = Estado.filas[evento["turma"]]
+    if evento["tipo"] == "pedido":
+        # id bem alto pra nunca empatar com um pedido do período
+        pedido = {"id": 10**9 + evento["id"], "matricula": evento["matricula"],
+                  "timestamp": evento["timestamp"]}
+        candidatos = montar_candidatos([pedido], Estado.base)
+        if not candidatos:
+            raise ErroFila("Matrícula não encontrada.")
+        return fila.pedir(candidatos[0])
+    if evento["tipo"] == "trancar":
+        return fila.trancar(evento["matricula"])
+    return fila.desistir(evento["matricula"])
+
+
+def agora_depois_de_tudo():
+    """Hora de agora, mas sempre depois do último pedido/evento registrado."""
+    agora = datetime.now().replace(microsecond=0)
+    datas = [p["timestamp"] for p in Estado.pedidos] + [e["timestamp"] for e in Estado.eventos]
+    if datas:
+        agora = max(agora, datetime.fromisoformat(max(datas)) + timedelta(seconds=1))
+    return agora
+
+
+def recomecar_filas():
+    """Período novo: apaga o que aconteceu depois do processamento anterior."""
+    Estado.eventos = []
+    dados.salvar_eventos(Estado.eventos)
+    montar_filas()
 
 
 def turma_por_codigo(codigo):
@@ -86,22 +142,13 @@ def aluno_json(aluno):
 
 
 def solicitacoes_do_aluno(matricula):
-    """Situação do aluno em cada turma que ele pediu (processada com merge)."""
+    """Situação atual do aluno em cada turma: matriculado, na fila (posição
+    vem da árvore em O(log n)) ou trancado."""
     saida = []
-    for p in Estado.pedidos:
-        if p["matricula"] != matricula:
-            continue
-        turma = turma_por_codigo(p["turma"])
-        candidatos = montar_candidatos(pedidos_da_turma(turma["codigo"]), Estado.base)
-        r = processar_turma(turma, candidatos, "merge")
-        linha = next(x for x in r["resultado"] if x["pedido_id"] == p["id"])
-        saida.append({
-            "turma": turma,
-            "timestamp": p["timestamp"],
-            "posicao": linha["posicao"],
-            "total": r["total_pedidos"],
-            "deferido": linha["deferido"],
-        })
+    for turma in Estado.turmas:
+        situacao = Estado.filas[turma["codigo"]].situacao(matricula)
+        if situacao:
+            saida.append({"turma": turma, **situacao})
     return saida
 
 
@@ -207,32 +254,46 @@ def api_processar(codigo):
     return jsonify(r)
 
 
-@app.post("/api/pedidos")
-def api_novo_pedido():
+@app.get("/api/turmas/<codigo>/fila")
+def api_fila(codigo):
+    turma = turma_por_codigo(codigo)
+    fila = Estado.filas[codigo]
+    m = fila.espera.metricas
+    return jsonify({
+        "turma": turma,
+        "vagas_livres": fila.vagas_livres(),
+        "matriculados": fila.lista_matriculados(),
+        "espera": fila.primeiros_da_espera(50),
+        "total_espera": len(fila.espera),
+        "altura": fila.espera.altura(),
+        "metricas": m.como_dict(),
+        "historico": fila.historico[::-1],
+    })
+
+
+@app.post("/api/turmas/<codigo>/fila/<acao>")
+def api_fila_acao(codigo, acao):
+    """acao: pedido (novo pedido), trancar ou desistir (sair da fila)."""
+    turma = turma_por_codigo(codigo)
+    if acao not in ("pedido", "trancar", "desistir"):
+        abort(404)
     corpo = request.get_json(force=True)
     matricula = so_digitos(str(corpo.get("matricula", "")))
-    codigo = corpo.get("turma", "")
-    turma = turma_por_codigo(codigo)
-    aluno, _, _ = Estado.base.por_matricula(matricula)
-    if aluno is None:
-        return jsonify({"erro": "Matrícula não encontrada."}), 404
     with trava:
-        if any(p["matricula"] == matricula and p["turma"] == codigo for p in Estado.pedidos):
-            return jsonify({"erro": "Esse aluno já pediu essa turma."}), 409
-        # o pedido manual entra "agora": depois de todos os pedidos do lote
-        agora = datetime.now().replace(microsecond=0)
-        if Estado.pedidos:
-            ultimo = datetime.fromisoformat(max(p["timestamp"] for p in Estado.pedidos))
-            agora = max(agora, ultimo + timedelta(seconds=1))
-        pedido = {
-            "id": max((p["id"] for p in Estado.pedidos), default=0) + 1,
-            "matricula": matricula,
+        evento = {
+            "id": max((e["id"] for e in Estado.eventos), default=0) + 1,
+            "tipo": acao,
             "turma": turma["codigo"],
-            "timestamp": agora.isoformat(),
+            "matricula": matricula,
+            "timestamp": agora_depois_de_tudo().isoformat(),
         }
-        Estado.pedidos.append(pedido)
-        dados.salvar_pedidos(Estado.pedidos)
-    return jsonify({"pedido": pedido, "aluno": aluno_json(aluno)})
+        try:
+            resultado = aplicar_evento(evento)
+        except ErroFila as erro:
+            return jsonify({"erro": str(erro)}), 400
+        Estado.eventos.append(evento)
+        dados.salvar_eventos(Estado.eventos)
+    return jsonify(resultado)
 
 
 @app.post("/api/pedidos/simular")
@@ -240,6 +301,7 @@ def api_simular_periodo():
     with trava:
         Estado.pedidos = dados.gerar_pedidos(Estado.base.alunos(), Estado.turmas)
         dados.salvar_pedidos(Estado.pedidos)
+        recomecar_filas()
     return jsonify({"pedidos": len(Estado.pedidos)})
 
 
@@ -256,6 +318,7 @@ def api_gerar_base():
         Estado.base = Base(alunos)
         Estado.pedidos = dados.gerar_pedidos(alunos, Estado.turmas)
         dados.salvar_pedidos(Estado.pedidos)
+        recomecar_filas()
         Estado.carregado_em = time.perf_counter() - inicio
     return api_info()
 
