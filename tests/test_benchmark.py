@@ -5,6 +5,7 @@ import benchmark_arvores as b
 
 class TestBenchmark(unittest.TestCase):
     def test_crescente_degenera_a_bst_e_nao_a_rubro_negra(self):
+        """Matrículas crescentes: a BST vira lista, a rubro-negra não."""
         chaves = list(range(261000001, 261000001 + 4000))
         r = b.rodar(chaves, 4000, "crescente", semente=1)
         arv = {a["arvore"]: a for a in r["arvores"]}
@@ -18,6 +19,8 @@ class TestBenchmark(unittest.TestCase):
         self.assertGreater(bst["busca"]["media_comparacoes"], 50 * rn["busca"]["media_comparacoes"])
 
     def test_aleatoria_nao_limita(self):
+
+        """Ordem aleatória: todas as árvores recebem todas as matrículas."""
         r = b.rodar(list(range(5000)), 2000, "aleatoria", semente=2)
         for a in r["arvores"]:
             if not a.get("pendente"):

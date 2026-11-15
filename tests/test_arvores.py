@@ -66,6 +66,8 @@ class TestesComuns:
     # ---- testes ----
 
     def test_vazia(self):
+
+        """Árvore vazia: busca, remoção e consultas não quebram."""
         self.assertEqual(len(self.arv), 0)
         self.assertEqual(self.arv.altura(), 0)
         self.assertIsNone(self.arv.buscar(5))
@@ -76,6 +78,8 @@ class TestesComuns:
         self.verificar()
 
     def test_insere_busca_e_repetida(self):
+
+        """Insere, busca e recusa matrícula repetida."""
         self.assertTrue(self.arv.inserir(10, "dez"))
         self.assertTrue(self.arv.inserir(5, "cinco"))
         self.assertFalse(self.arv.inserir(10, "outro"))
@@ -86,6 +90,8 @@ class TestesComuns:
         self.verificar()
 
     def test_operacoes_aleatorias(self):
+
+        """1.500 inserções/remoções aleatórias, conferindo as regras após cada uma."""
         modelo = {}
         for i in range(1500):
             chave = self.rng.randint(0, 300)
@@ -99,6 +105,8 @@ class TestesComuns:
             self.verificar(modelo)
 
     def test_remove_tudo(self):
+
+        """Insere 600 e remove todos, conferindo as regras após cada remoção."""
         chaves = self.rng.sample(range(5000), 600)
         for c in chaves:
             self.arv.inserir(c, c * 2)
@@ -111,6 +119,8 @@ class TestesComuns:
         self.assertEqual(self.arv.raiz, self.arv.NIL)
 
     def test_sequencial_crescente(self):
+
+        """2.000 matrículas em ordem crescente: altura dentro do limite teórico."""
         # é assim que as matrículas de um semestre novo chegam
         n = 2000
         for c in range(n):
@@ -120,6 +130,8 @@ class TestesComuns:
             self.assertLessEqual(self.arv.altura(), self.LIMITE_ALTURA(n))
 
     def test_consultas_de_ordem(self):
+
+        """Posição na fila, k-ésimo e intervalo batem com a lista ordenada."""
         chaves = self.rng.sample(range(10000), 800)
         for c in chaves:
             self.arv.inserir(c, str(c))
@@ -136,6 +148,8 @@ class TestesComuns:
             self.assertEqual(self.arv.intervalo(a, b), esperado)
 
     def test_chave_composta(self):
+
+        """Chave de prioridade (formando, IRA, semestre, hora) ordena certo."""
         # a prioridade da matrícula: (não formando, -IRA, -semestre, hora)
         pedidos = [(0, -45000, -9, 100), (1, -38000, -5, 50), (0, -45000, -9, 90), (0, -47000, -12, 300)]
         for p in pedidos:
@@ -145,6 +159,8 @@ class TestesComuns:
         self.verificar()
 
     def test_metricas_contam_comparacoes(self):
+
+        """Métricas contam as comparações."""
         for c in range(50):
             self.arv.inserir(c)
         self.assertGreater(self.arv.metricas.comparacoes, 0)
@@ -168,6 +184,8 @@ class TestAVL(TestesComuns, unittest.TestCase):
                                  f"nó {no.chave!r} desbalanceado")
 
     def test_rotacoes_contadas(self):
+
+        """AVL conta as rotações."""
         for c in range(100):
             self.arv.inserir(c)
         self.assertGreater(self.arv.metricas.rotacoes, 0)
@@ -201,6 +219,8 @@ class TestRubroNegra(TestesComuns, unittest.TestCase):
         pretos(arv.raiz)
 
     def test_rotacoes_e_recoloracoes_contadas(self):
+
+        """Rubro-negra conta rotações e recolorações."""
         for c in range(100):
             self.arv.inserir(c)
         self.assertGreater(self.arv.metricas.rotacoes, 0)
