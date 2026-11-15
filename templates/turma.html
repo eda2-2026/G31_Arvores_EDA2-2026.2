@@ -36,11 +36,15 @@
 
   <aside class="flex flex-col gap-6">
     <section class="cartao p-6">
-      <h2 class="font-bold text-sigaa-900">Solicitar vaga</h2>
-      <p class="mt-1 text-xs text-slate-500">O pedido entra com a hora de agora — depois de todos os outros.</p>
-      <form id="form-pedido" class="mt-3 flex gap-2">
+      <h2 class="font-bold text-sigaa-900">Movimentar a turma</h2>
+      <p class="mt-1 text-xs text-slate-500">Depois do processamento a turma continua mudando. Cada ação é uma operação na rubro-negra da fila de espera.</p>
+      <form id="form-fila" class="mt-3 flex flex-col gap-2">
         <input id="matricula" class="campo font-mono" placeholder="Matrícula" inputmode="numeric" required>
-        <button class="botao shrink-0">Pedir</button>
+        <div class="grid grid-cols-3 gap-2">
+          <button data-acao="pedido" class="botao justify-center px-2 text-xs">Pedir vaga</button>
+          <button data-acao="trancar" class="botao justify-center bg-poke-500 px-2 text-xs hover:bg-poke-600">Trancar</button>
+          <button data-acao="desistir" class="botao justify-center bg-slate-500 px-2 text-xs hover:bg-slate-600">Sair da fila</button>
+        </div>
       </form>
     </section>
     <section class="cartao p-6">
@@ -54,7 +58,37 @@
   </aside>
 </div>
 
-<section id="resumo" class="mt-6 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6"></section>
+<section class="mt-8">
+  <h2 class="text-xl font-extrabold tracking-tight text-sigaa-900">Turma agora</h2>
+  <p class="text-sm text-slate-500">Matriculados e fila de espera depois do processamento. A fila é uma <b>árvore rubro-negra</b> ordenada pela prioridade: entrar, sair, promover o 1º e saber a posição custam O(log n).</p>
+  <div id="fila-resumo" class="mt-4 grid grid-cols-2 gap-4 lg:grid-cols-4"></div>
+  <div class="mt-4 grid gap-6 lg:grid-cols-5">
+    <section class="cartao overflow-hidden lg:col-span-3">
+      <div class="flex items-center justify-between border-b border-slate-100 px-4 py-3">
+        <h3 class="font-bold text-sigaa-900">Fila de espera</h3>
+        <span id="fila-total" class="text-xs text-slate-400"></span>
+      </div>
+      <ol id="fila-espera" class="max-h-[28rem] divide-y divide-slate-100 overflow-y-auto"></ol>
+    </section>
+    <div class="flex flex-col gap-6 lg:col-span-2">
+      <section class="cartao overflow-hidden">
+        <div class="border-b border-slate-100 px-4 py-3"><h3 class="font-bold text-sigaa-900">Últimas operações</h3></div>
+        <ol id="fila-historico" class="max-h-64 divide-y divide-slate-100 overflow-y-auto text-sm"></ol>
+      </section>
+      <section class="cartao overflow-hidden">
+        <div class="flex items-center justify-between border-b border-slate-100 px-4 py-3">
+          <h3 class="font-bold text-sigaa-900">Matriculados</h3>
+          <span id="matric-total" class="text-xs text-slate-400"></span>
+        </div>
+        <ul id="fila-matriculados" class="max-h-64 divide-y divide-slate-100 overflow-y-auto"></ul>
+      </section>
+    </div>
+  </div>
+</section>
+
+<h2 class="mt-10 text-xl font-extrabold tracking-tight text-sigaa-900">Processamento do período de matrícula</h2>
+<p class="text-sm text-slate-500">Os pedidos feitos durante o período, ordenados de uma vez (trabalho 2). Daqui saem os matriculados e a fila inicial.</p>
+<section id="resumo" class="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6"></section>
 <div id="alerta" class="mt-4"></div>
 
 <section class="cartao mt-4 overflow-hidden">
@@ -168,20 +202,105 @@ async function processar() {
 
 document.querySelectorAll('.alg').forEach(b => b.onclick = () => { algoritmo = b.dataset.alg; processar(); });
 
-document.getElementById('form-pedido').onsubmit = e => {
-  e.preventDefault();
-  const botao = e.target.querySelector('button');
-  comCarregando(botao, async () => {
+// ---------- fila de espera ----------
+
+let destaqueMat = new URLSearchParams(location.search).get('destaque');
+const ICONE = { pedido: '📝', trancar: '🔓', desistir: '🚪' };
+
+function custo(c) {
+  return `${c.comparacoes} comp. · ${c.rotacoes} rot. · ${c.recoloracoes} recol.`;
+}
+
+function mensagem(ev) {
+  const nome = ev.aluno.nome;
+  if (ev.tipo === 'pedido') {
+    return ev.status === 'matriculado'
+      ? `${nome} foi matriculado direto (havia vaga)`
+      : `${nome} entrou na fila na posição ${ev.posicao}º de ${ev.total}`;
+  }
+  if (ev.tipo === 'trancar') {
+    return ev.promovido
+      ? `${nome} trancou · ${ev.promovido.nome} saiu da fila e foi matriculado`
+      : `${nome} trancou · fila vazia, a vaga ficou aberta`;
+  }
+  return `${nome} saiu da fila (era o ${ev.saiu_da_posicao}º)`;
+}
+
+function linhaAluno(a, extra) {
+  const marcado = a.matricula === destaqueMat ? 'bg-sigaa-50 ring-2 ring-inset ring-sigaa-500' : '';
+  return `
+  <li id="m${a.matricula}" class="flex items-center gap-3 px-4 py-2 ${marcado}">
+    ${extra.antes || ''}
+    ${avatar(a, 'h-9 w-9')}
+    <a href="/?q=${a.matricula}" class="min-w-0 flex-1 hover:underline">
+      <span class="block truncate text-sm font-semibold text-slate-800">${esc(a.nome)} ${a.formando ? '🎓' : ''}</span>
+      <span class="font-mono text-xs text-slate-400">${a.matricula} · IRA ${ira(a.ira)} · ${a.semestre}º sem.</span>
+    </a>
+    <button data-acao="${extra.acao}" data-mat="${a.matricula}" class="acao-linha shrink-0 rounded-lg px-2 py-1 text-xs font-semibold ${extra.cor}">${extra.rotulo}</button>
+  </li>`;
+}
+
+function renderFila(f) {
+  const ultimo = f.historico[0];
+  const limite = (2 * Math.log2(f.total_espera + 1)).toFixed(1).replace('.', ',');
+  document.getElementById('fila-resumo').innerHTML = [
+    cartaoNum('Matriculados', `${f.matriculados.length}<span class="text-base text-slate-400">/${f.turma.vagas}</span>`,
+      f.vagas_livres ? `${f.vagas_livres} vaga(s) aberta(s)` : 'turma cheia'),
+    cartaoNum('Na fila de espera', f.total_espera, 'nós na rubro-negra'),
+    cartaoNum('Altura da árvore', f.altura, `máximo teórico 2·log₂(n+1) = ${limite}`),
+    cartaoNum('Última operação', ultimo ? `${ultimo.custo.comparacoes} comp.` : '—',
+      ultimo ? `${ultimo.custo.rotacoes} rotações · ${ultimo.custo.recoloracoes} recolorações` : 'nenhuma ainda', 'text-sigaa-700'),
+  ].join('');
+
+  document.getElementById('fila-total').textContent =
+    f.total_espera > f.espera.length ? `mostrando ${f.espera.length} de ${f.total_espera}` : `${f.total_espera} aluno(s)`;
+  document.getElementById('fila-espera').innerHTML = f.espera.length
+    ? f.espera.map(a => linhaAluno(a, {
+        antes: `<span class="w-8 shrink-0 text-right font-extrabold text-slate-700">${a.posicao}º</span>`,
+        acao: 'desistir', rotulo: 'sair', cor: 'bg-slate-100 text-slate-600 hover:bg-slate-200',
+      })).join('')
+    : '<li class="px-4 py-6 text-center text-sm text-slate-400">Ninguém na fila.</li>';
+
+  document.getElementById('matric-total').textContent = `${f.matriculados.length} aluno(s)`;
+  document.getElementById('fila-matriculados').innerHTML = f.matriculados.map(a => linhaAluno(a, {
+    acao: 'trancar', rotulo: 'trancar', cor: 'bg-poke-500/10 text-poke-600 hover:bg-poke-500/20',
+  })).join('');
+
+  document.getElementById('fila-historico').innerHTML = f.historico.length
+    ? f.historico.map(ev => `
+      <li class="px-4 py-2">
+        <div>${ICONE[ev.tipo]} ${esc(mensagem(ev))}</div>
+        <div class="mt-0.5 font-mono text-[11px] text-slate-400">${custo(ev.custo)} · altura ${ev.altura} · ${ev.na_espera} na fila</div>
+      </li>`).join('')
+    : '<li class="px-4 py-6 text-center text-slate-400">Use o painel “Movimentar a turma” ou os botões das listas.</li>';
+
+  document.querySelectorAll('.acao-linha').forEach(b => b.onclick = () => acaoFila(b.dataset.acao, b.dataset.mat, b));
+  if (destaqueMat) document.getElementById(`m${destaqueMat}`)?.scrollIntoView({ block: 'nearest' });
+}
+
+async function carregarFila() {
+  renderFila(await api(`/api/turmas/${CODIGO}/fila`));
+}
+
+async function acaoFila(acao, matricula, botao) {
+  await comCarregando(botao, async () => {
     try {
-      const r = await api('/api/pedidos', { method: 'POST', body: { matricula: document.getElementById('matricula').value, turma: CODIGO } });
-      destaque = r.pedido.id;
-      toast(`Pedido de ${r.aluno.nome} registrado`);
-      document.getElementById('matricula').value = '';
-      await processar();
+      const ev = await api(`/api/turmas/${CODIGO}/fila/${acao}`, { method: 'POST', body: { matricula } });
+      destaqueMat = ev.promovido ? ev.promovido.matricula : ev.aluno.matricula;
+      toast(mensagem(ev));
+      await carregarFila();
     } catch (err) { toast(err.message, 'erro'); }
   });
+}
+
+const formFila = document.getElementById('form-fila');
+formFila.onsubmit = e => {
+  e.preventDefault();
+  const botao = e.submitter || formFila.querySelector('[data-acao="pedido"]');
+  acaoFila(botao.dataset.acao, document.getElementById('matricula').value, botao);
 };
 
 processar();
+carregarFila();
 </script>
 {% endblock %}
