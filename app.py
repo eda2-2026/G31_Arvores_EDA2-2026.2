@@ -87,8 +87,6 @@ def montar_filas():
             aplicar_evento(evento)
         except (ErroFila, KeyError):
             pass  # evento que não faz mais sentido (ex.: aluno removido da base)
-    for fila in Estado.filas.values():
-        fila.historico.clear()
 
 
 def aplicar_evento(evento):
