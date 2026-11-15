@@ -69,14 +69,21 @@ Todas ficam em [`arvores/`](arvores) e compartilham a mesma interface ([`base.py
 
 Toda rotação também atualiza o `tamanho` dos dois nós que giram.
 
-### Por que balancear? Matrículas chegam em ordem crescente
+### Benchmark: por que balancear?
 
-As matrículas de um semestre novo são sequenciais (`261000001`, `261000002`, ...). Numa BST comum, cada uma entra à direita da anterior e a árvore vira uma lista, com altura n. Com 3000 inserções crescentes:
+As matrículas de um semestre novo são sequenciais (`261000001`, `261000002`, ...). Numa BST comum, cada uma entra à direita da anterior e a árvore vira uma lista, com altura n. A aba **Árvores** insere matrículas reais da base nas três árvores, busca 1.000 delas, remove 10% e desenha a altura ao longo das inserções ([`benchmark_arvores.py`](benchmark_arvores.py)).
 
-| Árvore | Altura | Limite teórico |
-|---|---|---|
-| BST comum | 3000 | — |
-| Rubro-negra | 20 | 2·log₂(n+1) ≈ 23,1 |
+Resultado com 100.000 matrículas em ordem crescente:
+
+| Árvore | Matrículas | Altura | Comparações por busca | Inserção | Rotações | Recolorações |
+|---|---|---|---|---|---|---|
+| BST comum | 3.000 (parou: virou lista) | **3.000** | ~1.470 | ~1,5 s | 0 | 0 |
+| Rubro-negra | 100.000 | **31** (máx. 33,2) | 16,1 | ~1,4 s | 99.969 | 499.846 |
+| AVL | _(em implementação)_ | | | | | |
+
+A BST levou o mesmo tempo para inserir **3 mil** matrículas que a rubro-negra para inserir **100 mil**, e cada busca nela custa ~90 vezes mais. A rubro-negra paga o balanceamento com rotações e recolorações, mas a altura fica em O(log n).
+
+![Benchmark das árvores](assets/arvores-benchmark.png)
 
 ## Testes
 
@@ -90,6 +97,7 @@ py -m unittest -v
   - na AVL: fator de balanceamento e altura;
   - na rubro-negra: as 5 propriedades e os ponteiros `pai`.
 - [`tests/test_fila.py`](tests/test_fila.py): a fila de espera contra uma lista reordenada inteira a cada passo. A posição, o promovido e a ordem têm que bater sempre.
+- [`tests/test_benchmark.py`](tests/test_benchmark.py): com chaves crescentes, a BST degenera e a rubro-negra não.
 
 ## Como rodar
 
@@ -105,6 +113,7 @@ Abra http://127.0.0.1:5000. Na primeira execução é gerada uma base com 100 mi
 ```
 arvores/        BST, AVL, rubro-negra e a interface comum
 fila.py         fila de espera da turma (rubro-negra)
+benchmark_arvores.py  BST × AVL × rubro-negra com as matrículas da base
 matricula.py    processamento do período de matrícula (trabalho 2)
 ordenacao.py    merge, radix, insertion, quick e heap sort (trabalho 2)
 busca.py        kindex + hash (trabalho 1)
