@@ -170,4 +170,104 @@ class RubroNegra(ArvoreBase):
     # ---------- remoção ----------
 
     def remover(self, chave):
-        raise NotImplementedError("Rubro-negra: remoção ainda não implementada")
+        z = self._no(chave)
+        if z is self.NIL:
+            return None
+        valor = z.valor
+
+        # y = nó que sai fisicamente do lugar dele:
+        #   z mesmo, se tem no máximo 1 filho; senão o sucessor de z
+        y = z
+        if z.esq is not self.NIL and z.dir is not self.NIL:
+            y = z.dir
+            while y.esq is not self.NIL:
+                y = y.esq
+        y_era_vermelho = y.vermelho
+
+        # toda subárvore acima de onde y estava perde 1 nó
+        acima = y.pai
+        while acima is not self.NIL:
+            acima.tamanho -= 1
+            acima = acima.pai
+
+        # x = quem ocupa o lugar antigo de y (pode ser o NIL)
+        if z.esq is self.NIL:
+            x = z.dir
+            self._trocar_no_pai(z, z.dir)
+        elif z.dir is self.NIL:
+            x = z.esq
+            self._trocar_no_pai(z, z.esq)
+        else:
+            x = y.dir
+            if y.pai is z:
+                x.pai = y  # importante quando x é o NIL
+            else:
+                self._trocar_no_pai(y, y.dir)
+                y.dir = z.dir
+                y.dir.pai = y
+            # y assume o lugar de z: filhos, cor e tamanho
+            self._trocar_no_pai(z, y)
+            y.esq = z.esq
+            y.esq.pai = y
+            y.vermelho = z.vermelho
+            y.tamanho = z.tamanho
+
+        # tirar um vermelho não quebra nada; tirar um preto deixa um caminho
+        # com um preto a menos -> x fica "duplo preto" e precisa ser corrigido
+        if not y_era_vermelho:
+            self._corrigir_remocao(x)
+        return valor
+
+    def _corrigir_remocao(self, x):
+        while x is not self.raiz and not x.vermelho:
+            pai = x.pai
+            if x is pai.esq:
+                irmao = pai.dir
+                if irmao.vermelho:
+                    # caso 1: irmão vermelho -> gira pra ficar com irmão preto
+                    self._pintar(irmao, False)
+                    self._pintar(pai, True)
+                    self._rotacionar_esquerda(pai)
+                    irmao = pai.dir
+                if not irmao.esq.vermelho and not irmao.dir.vermelho:
+                    # caso 2: irmão preto com filhos pretos -> irmão vira
+                    # vermelho e o "preto extra" sobe pro pai
+                    self._pintar(irmao, True)
+                    x = pai
+                else:
+                    if not irmao.dir.vermelho:
+                        # caso 3: só o sobrinho de dentro é vermelho -> gira
+                        # o irmão pra virar o caso 4
+                        self._pintar(irmao.esq, False)
+                        self._pintar(irmao, True)
+                        self._rotacionar_direita(irmao)
+                        irmao = pai.dir
+                    # caso 4: sobrinho de fora vermelho -> uma rotação no pai
+                    # devolve o preto que faltava e acaba
+                    self._pintar(irmao, pai.vermelho)
+                    self._pintar(pai, False)
+                    self._pintar(irmao.dir, False)
+                    self._rotacionar_esquerda(pai)
+                    x = self.raiz
+            else:  # espelho: x é filho direito
+                irmao = pai.esq
+                if irmao.vermelho:
+                    self._pintar(irmao, False)
+                    self._pintar(pai, True)
+                    self._rotacionar_direita(pai)
+                    irmao = pai.esq
+                if not irmao.dir.vermelho and not irmao.esq.vermelho:
+                    self._pintar(irmao, True)
+                    x = pai
+                else:
+                    if not irmao.esq.vermelho:
+                        self._pintar(irmao.dir, False)
+                        self._pintar(irmao, True)
+                        self._rotacionar_esquerda(irmao)
+                        irmao = pai.esq
+                    self._pintar(irmao, pai.vermelho)
+                    self._pintar(pai, False)
+                    self._pintar(irmao.esq, False)
+                    self._rotacionar_direita(pai)
+                    x = self.raiz
+        self._pintar(x, False)
