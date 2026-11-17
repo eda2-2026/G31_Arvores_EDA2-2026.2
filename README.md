@@ -69,6 +69,20 @@ Todas ficam em [`arvores/`](arvores) e compartilham a mesma interface ([`base.py
 
 Toda rotação também atualiza o `tamanho` dos dois nós que giram.
 
+### AVL
+
+Cada nó guarda a sua **altura**, e a regra é que, em todo nó, as alturas das subárvores esquerda e direita diferem no máximo em 1: o **fator de balanceamento** `altura(esq) − altura(dir)` fica entre −1 e 1. Com isso a altura fica no máximo em ~1,44·log₂ n, mais baixa que o limite da rubro-negra (2·log₂ n).
+
+Inserção e remoção descem recursivamente até o lugar certo e, na volta, recalculam a altura e o `tamanho` de cada nó do caminho. Se algum fator chega a ±2, uma ou duas rotações consertam, conforme o lado que pesou:
+1. **LL**, pesou à esquerda do filho esquerdo: rotação à direita no nó.
+2. **RR**, o espelho: rotação à esquerda no nó.
+3. **LR**, pesou à direita do filho esquerdo: rotação à esquerda no filho, depois à direita no nó.
+4. **RL**, o espelho: rotação à direita no filho, depois à esquerda no nó.
+
+**Inserção:** uma correção basta, porque a rotação devolve a subárvore à altura que ela tinha antes. E quando uma subárvore termina com a mesma altura (com ou sem rotação), nada acima dela pode ter desbalanceado: dali para cima só o `tamanho` aumenta, sem recalcular nem girar nada.
+
+**Remoção:** com dois filhos, o sucessor (menor da direita) toma o lugar do nó removido. A rotação pode baixar a altura da subárvore e desbalancear um ancestral, então pode haver uma correção em cada nível até a raiz.
+
 ### Benchmark: por que balancear?
 
 As matrículas de um semestre novo são sequenciais (`261000001`, `261000002`, ...). Numa BST comum, cada uma entra à direita da anterior e a árvore vira uma lista, com altura n. A aba **Árvores** insere matrículas reais da base nas três árvores, busca 1.000 delas, remove 10% e desenha a altura ao longo das inserções ([`benchmark_arvores.py`](benchmark_arvores.py)).
@@ -77,11 +91,25 @@ Resultado com 100.000 matrículas em ordem crescente:
 
 | Árvore | Matrículas | Altura | Comparações por busca | Inserção | Rotações | Recolorações |
 |---|---|---|---|---|---|---|
-| BST comum | 3.000 (parou: virou lista) | **3.000** | ~1.470 | ~1,5 s | 0 | 0 |
-| Rubro-negra | 100.000 | **31** (máx. 33,2) | 16,1 | ~1,4 s | 99.969 | 499.846 |
-| AVL | _(em implementação)_ | | | | | |
+| BST comum | 3.000 (parou: virou lista) | **3.000** | ~1.500 | ~1,25 s | 0 | 0 |
+| AVL | 100.000 | **17** (máx. 23,6) | 15,8 | ~0,9 s | 99.983 | — |
+| Rubro-negra | 100.000 | **31** (máx. 33,2) | 16,1 | ~1,0 s | 99.969 | 499.846 |
 
-A BST levou o mesmo tempo para inserir **3 mil** matrículas que a rubro-negra para inserir **100 mil**, e cada busca nela custa ~90 vezes mais. A rubro-negra paga o balanceamento com rotações e recolorações, mas a altura fica em O(log n).
+A BST levou mais tempo para inserir **3 mil** matrículas do que as árvores balanceadas para inserir **100 mil**, e cada busca nela custa ~90 vezes mais. As balanceadas pagam com rotações (e, na rubro-negra, recolorações), mas a altura fica em O(log n).
+
+A AVL fica com altura **17**, praticamente a mínima possível (log₂ 100.000 ≈ 16,6), enquanto a rubro-negra chega a 31. Por isso, com chaves crescentes, ela faz bem menos comparações para inserir (1,57 milhão contra 2,77 milhões) e termina antes.
+
+Com as mesmas 100.000 matrículas em ordem aleatória:
+
+| Árvore | Altura | Comparações por busca | Inserção | Rotações | Recolorações |
+|---|---|---|---|---|---|
+| BST comum | ~40 | ~20,5 | ~0,75 s | 0 | 0 |
+| AVL | **20** (máx. 23,6) | 16,0 | ~0,95 s | ~70 mil | — |
+| Rubro-negra | **20** (máx. 33,2) | 16,0 | ~0,7 s | ~58 mil | ~232 mil |
+
+Aqui a BST não degenera (altura ~40, o dobro das outras), e as duas balanceadas empatam na altura e nas buscas. A rubro-negra insere mais rápido: gira menos e é iterativa, enquanto a AVL é recursiva, e em Python cada chamada de função pesa. É a troca clássica: a AVL é mais rígida no balanceamento (busca um pouco melhor no pior caso), e a rubro-negra mexe menos na árvore a cada mudança.
+
+Os tempos foram medidos na mesma máquina e variam um pouco de uma execução para outra.
 
 ![Benchmark das árvores](assets/arvores-benchmark.png)
 
@@ -125,4 +153,4 @@ tests/          testes das árvores e da fila
 
 ## Vídeo
 
-_(link do vídeo)_
+[Apresentação do trabalho 3 no YouTube](https://youtu.be/y28rO-B_7yA): o João mostra a fila de espera com a rubro-negra, e a Ana mostra a AVL e o benchmark das três árvores.
