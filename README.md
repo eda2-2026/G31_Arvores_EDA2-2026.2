@@ -1,6 +1,8 @@
 # G31_Arvores_EDA2-2026.2
 Repositório dedicado ao Trabalho 3 (Árvores Balanceadas) de Estruturas de Dados 2 do 2º semestre de 2026.
 
+https://youtu.be/y28rO-B_7yA - apresentação
+
 ## Alunos
 | Matrícula | Nome |
 |-----------------------|---------------------|
